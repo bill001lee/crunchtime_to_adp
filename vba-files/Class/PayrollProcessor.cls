@@ -1884,21 +1884,6 @@ Private Sub ProcessRule1_AsAllowance(ByVal dayMap As Object)
     WriteAllowancesDictAppend_ dict, wsOut
 End Sub
 
-
-' ===== FIXED & HARDENED: ProcessExportDeduped =====
-' Precedence:
-'   1) Public Holiday (603) – consume whole shift minutes first
-'   2) Rule 4 (6th/7th worked day) (610) – count only days that still have minutes after PH
-'   3) Highest-rated O/T:
-'        - Daily > 11.5h => First2 (605/607/602) and After2 (606/608/602)
-'        - Weekly > 38h  => First2 and After2 (same day-of-week codes)
-'   4) Remaining base (600/601/602)
-'
-' Notes:
-'   - Day minutes are tracked with .normalAvail; PH/R4 consume from it.
-'   - Daily/Weekly allocators (AllocateFromLatestInDay/WeekBucket) DO NOT subtract .normalAvail.
-'     They only compute selections; the combiner does the actual subtraction & writing.
-
 Private Sub ProcessExportDeduped(ByVal dayMap As Object)
     Dim outOT As Object, outNormal As Object
     Set outOT = CreateObject("Scripting.Dictionary")
@@ -2100,22 +2085,20 @@ NextDay:
         Next kk2
     Next wk
     
-    DumpDictionary dayMap, "dayMap", 50
-    DumpDictionary weekMap, "weekMap", 50
-    DumpDictionary dailyF2, "dailyF2", 50
-    DumpDictionary dailyA2, "dailyA2", 50
-    DumpDictionary weeklyF2, "weeklyF2", 50
-    DumpDictionary weeklyA2, "weeklyA2", 50
-    DumpCollection shifts, "daysDict(" & CStr(dayKey) & ")"
-    
-
-    ' 3) Combine & emit — GLOBAL latest-first (this is where subtraction & writing happens)
+    ' 3) Combine & emit ï¿½ GLOBAL latest-first (this is where subtraction & writing happens)
     Dim bandWins As Object: Set bandWins = CreateObject("Scripting.Dictionary")
     Call CombineAndEmit_GlobalLatestFirst( _
         dayMap, weekMap, _
         dailyF2, dailyA2, weeklyF2, weeklyA2, _
         outOT, outNormal, _
         bandWins)
+
+    DumpDictionary dayMap, "dayMap", 50
+    DumpDictionary weekMap, "weekMap", 50
+    DumpDictionary dailyF2, "dailyF2", 50
+    DumpDictionary dailyA2, "dailyA2", 50
+    DumpDictionary weeklyF2, "weeklyF2", 50
+    DumpDictionary weeklyA2, "weeklyA2", 50
 
     ' Remaining safety (should be none), spill any leftovers as base
     For Each k In dayMap.keys
@@ -2142,7 +2125,7 @@ End Sub
 
 Private Function MapCodeForBand(ByVal dt As Date, ByVal band As Integer) As String
 ' band: 0=base, 1=first2, 2=after2
-' Mon–Fri: 600/605/606, Sat: 601/607/608, Sun: 602/602/602
+' Monï¿½Fri: 600/605/606, Sat: 601/607/608, Sun: 602/602/602
 
     Dim dow As Integer
     dow = Weekday(dt, vbMonday) ' Mon=1..Sun=7
@@ -2426,16 +2409,7 @@ Private Function SortedPiecesLatestFirst(ByVal pcs As Collection) As Collection
     Next i
     Set SortedPiecesLatestFirst = outC
 End Function
-' ===== REPLACEMENT: CombineAndEmit_GlobalLatestFirst (piecewise max) =====
-' For every employee/week bucket:
-'   - Collect all remaining pieces (normalAvail > 0)
-'   - For each piece, compute band minutes as:
-'       A2_piece = max(dailyA2(ptr), weeklyA2(ptr))
-'       F2_piece = max(dailyF2(ptr), weeklyF2(ptr))
-'   - Allocate A2 first, then F2, then remaining base.
-' This implements the "max(daily, weekly) per minute" rule, per piece, deterministically.
 
-' ===== REPLACEMENT: CombineAndEmit_GlobalLatestFirst (piecewise max with success-guard) =====
 Private Sub CombineAndEmit_GlobalLatestFirst( _
     ByRef dayMap As Object, _
     ByRef weekMap As Object, _
@@ -2545,33 +2519,6 @@ Private Sub CombineAndEmit_GlobalLatestFirst( _
                     '             "Units=" & take & "; Code=" & MapCodeForBand_DOW(dow, 0)
                     End If
                 End If
-                
-                ' A2 success block:
-                If ok Then
-                    Debug.Print "A2", .data.EmployeeCode, Format$(.data.DateIn, "dd-mmm-yyyy"), _
-                                "dow=" & .data.dayOfWeek, _
-                                "take=" & take, _
-                                "code=" & MapCodeForBand_DOW(dow, 2)
-                    ' ... existing a2Taken + subtract ...
-                End If
-                
-                ' F2 success block:
-                If ok Then
-                    Debug.Print "F2", .data.EmployeeCode, Format$(.data.DateIn, "dd-mmm-yyyy"), _
-                                "dow=" & .data.dayOfWeek, _
-                                "take=" & take, _
-                                "code=" & MapCodeForBand_DOW(dow, 1)
-                    ' ... existing f2Taken + subtract ...
-                End If
-                
-                ' Base success block:
-                If ok Then
-                    Debug.Print "B0", .data.EmployeeCode, Format$(.data.DateIn, "dd-mmm-yyyy"), _
-                                "dow=" & .data.dayOfWeek, _
-                                "take=" & take, _
-                                "code=" & MapCodeForBand_DOW(dow, 0)
-                    ' ... existing baseTaken + subtract ...
-End If
             End With
         Next i
 
@@ -2849,7 +2796,7 @@ Public Sub DumpDictionary(ByVal dict As Object, _
     For Each k In dict.keys
         n = n + 1
         If n > maxItems Then
-            Debug.Print "… (" & (dict.Count - maxItems) & " more items not shown)"
+            Debug.Print "ï¿½ (" & (dict.Count - maxItems) & " more items not shown)"
             Exit For
         End If
 
@@ -2881,7 +2828,7 @@ Public Sub DumpDictionary(ByVal dict As Object, _
 End Sub
 
 Public Sub DumpShiftPiece(ByVal sp As ShiftPieceClass, Optional ByVal prefix As String = "")
-    On Error Resume Next ' Defensive: don’t interrupt dumps on a bad member
+    On Error Resume Next ' Defensive: donï¿½t interrupt dumps on a bad member
     Debug.Print prefix & _
         "Emp=" & sp.EmployeeCode & _
         "; Site=" & sp.payrollExportCode & _
@@ -2930,7 +2877,7 @@ End Sub
 Private Function MapCodeForBand_DOW(ByVal dayOfWeek As Integer, ByVal band As Integer) As String
     ' band: 0=base, 1=first2, 2=after2
     Select Case dayOfWeek
-        Case 1 To 5  ' Mon–Fri
+        Case 1 To 5  ' Monï¿½Fri
             If band = 2 Then
                 MapCodeForBand_DOW = "606"
             ElseIf band = 1 Then
