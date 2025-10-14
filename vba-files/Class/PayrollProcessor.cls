@@ -30,7 +30,6 @@ Public Property Let PublishAudit(ByVal v As Boolean)
     mPublishAudit = v
 End Property
 
-
 ' =========[ Public init check ]=========
 Public Property Get IsInitialized() As Boolean
     Dim ok As Boolean
@@ -379,37 +378,7 @@ Private Function BuildAggregationKey(rowData As PayrollRowDataClass) As String
 End Function
 
 
-Private Sub CopyPayrollRowData(ByRef src As PayrollRowDataClass, ByRef dest As PayrollRowDataClass)
-    With dest
-        .companyCode = src.companyCode
-        .EmployeeCode = src.EmployeeCode
 
-        ' >>> Ensure week-ending flows into derived rows
-        .weekEnding = src.weekEnding
-
-        ' Keep your original entryDate logic (not used for OTDeduped anymore, but harmless)
-        .entryDate = IIf(IsOvertimeCode(src.payrollCode), src.fromDate, src.entryDate)
-
-        .weekSortKey = IIf(IsOvertimeCode(src.payrollCode), _
-            CLng(Format(ParseYYMMDDDate(src.fromDate) - Weekday(ParseYYMMDDDate(src.fromDate), vbMonday) + 1, "yyyymmdd")), _
-            src.weekSortKey)
-
-        .payrollCode = src.payrollCode
-        .PayClassCode = src.PayClassCode
-        .costCentre = src.costCentre
-        .fromDate = src.fromDate
-        .toDate = src.toDate
-        .dateSortKey = src.dateSortKey
-        .payrollExportCode = src.payrollExportCode
-        .payRate = src.payRate
-        .dayOfWeek = src.dayOfWeek
-        .DateIn = src.DateIn
-        .DateOut = src.DateOut
-        .DateTimeIn = src.DateTimeIn
-        .DateTimeOut = src.DateTimeOut
-        .hours = src.hours
-    End With
-End Sub
 
 
 Private Sub WriteOutputRowTo(ByVal ws As Worksheet, ByVal rowNum As Long, ByVal key As String, ByVal hours As Double)
@@ -970,8 +939,8 @@ Private Function ApplyOvertimeRule1( _
     payrollCode = "615"
     Dim totalMinutes As Double
     totalMinutes = (DateTimeOut - DateTimeIn) * 24 * 60
-    If totalMinutes > 300 Then
-        ApplyOvertimeRule1 = totalMinutes - 300
+    If totalMinutes > 360 Then
+        ApplyOvertimeRule1 = totalMinutes - 360
     Else
         ApplyOvertimeRule1 = 0
     End If
@@ -1086,246 +1055,6 @@ End Function
 Public Function Debug_GetRow(ByVal rowNum As Long) As PayrollRowDataClass
     Set Debug_GetRow = ExtractShiftRaw(rowNum)
 End Function
-
-'Public Sub ProcessRule2Only()
-'    If Not IsInitialized Then
-'        MsgBox "Processor not properly initialized.", vbCritical
-'        Exit Sub
-'    End If
-'
-'    'PrepareAllOutputSheets
-'
-'    Dim dayMap As Object
-'    GatherDailyBuckets dayMap
-'
-'    Dim dictNormal As Object: Set dictNormal = CreateObject("Scripting.Dictionary")
-'    Dim dictR2 As Object: Set dictR2 = CreateObject("Scripting.Dictionary")
-'
-'    Dim k As Variant
-'    For Each k In dayMap.Keys
-'        Dim shifts As Collection: Set shifts = dayMap(k)
-'
-'        ' Reset dayUnits for each new day
-'        Dim dayUnits As Double: dayUnits = 0
-'
-'        ' Accumulate total units for the current day
-'        Dim i As Long
-'        For i = 1 To shifts.Count
-'            dayUnits = dayUnits + shifts(i).rawUnits
-'        Next
-'
-'        If dayUnits > 11.5 * 10000 Then
-'            Dim r2Units As Double: r2Units = dayUnits - 11.5 * 10000
-'            Dim first2 As Double: first2 = Application.WorksheetFunction.Min(20000, r2Units)
-'            Dim after2 As Double: after2 = Application.WorksheetFunction.Max(0, r2Units - 20000)
-'            Dim code1 As String, code2 As String, tmpA As Double, tmpB As Double
-'            Call ApplyOvertimeRule2(shifts(1).data.DateTimeIn, shifts(1).data.DateTimeIn + (12# / 24#), shifts(1).data.dayOfWeek, code1, code2, tmpA, tmpB)
-'
-'            Dim need As Double, take As Double
-'            need = after2
-'            For i = shifts.Count To 1 Step -1
-'                take = Application.WorksheetFunction.Min(need, shifts(i).normalAvail)
-'                If take > 0 Then
-'                    StoreR2Piece dictR2, shifts(i).data, take, code2
-'                    shifts(i).normalAvail = shifts(i).normalAvail - take
-'                    need = need - take
-'                    If need <= 0 Then Exit For
-'                End If
-'            Next i
-'
-'            need = first2
-'            For i = shifts.Count To 1 Step -1
-'                take = Application.WorksheetFunction.Min(need, shifts(i).normalAvail)
-'                If take > 0 Then
-'                    StoreR2Piece dictR2, shifts(i).data, take, code1
-'                    shifts(i).normalAvail = shifts(i).normalAvail - take
-'                    need = need - take
-'                    If need <= 0 Then Exit For
-'                End If
-'            Next i
-'        End If
-'
-'        For i = 1 To shifts.Count
-'            If shifts(i).normalAvail > 0 Then
-'                StoreNormalPiece dictNormal, shifts(i).data, shifts(i).normalAvail
-'            End If
-'        Next i
-'    Next k
-'
-'    WriteDictionaryToSheet dictNormal, outputSheets("Normal")
-'    WriteDictionaryToSheet dictR2, outputSheets("OT_Rule2")
-'End Sub
-
-'Public Sub ProcessRule3_WeekGT38Only()
-'    If Not IsInitialized Then
-'        MsgBox "Processor not properly initialized.", vbCritical
-'        Exit Sub
-'    End If
-'
-'    'PrepareAllOutputSheets
-'
-'    Dim dayMap As Object
-'    GatherDailyBuckets dayMap
-'
-'    ' Convert to list for weekly processing
-'    Dim normals As Collection
-'    Dim dictNormal As Object: Set dictNormal = CreateObject("Scripting.Dictionary")
-'    Dim k As Variant, shifts As Collection, i As Long
-'    For Each k In dayMap.Keys
-'        Set shifts = dayMap(k)
-'        For i = 1 To shifts.Count
-'            If shifts(i).rawUnits > 0 Then
-'                StoreByKey dictNormal, shifts(i).data
-'            End If
-'        Next i
-'    Next k
-'
-'    ExpandDictToList dictNormal, normals
-'
-'    ' Apply Rule 3: Week > 38 hours
-'    Dim dictWeekGT38 As Object
-'    Call ApplyWeeklyHoursGT38_FromRaw(dayMap, dictWeekGT38)
-'
-'    ' Remaining normal hours
-'    Dim dictNormalFinal As Object: Set dictNormalFinal = CreateObject("Scripting.Dictionary")
-'    For i = 1 To normals.Count
-'        Dim pr As PayrollRowDataClass
-'        Set pr = normals(i)
-'        If pr.hours > 0 Then StoreByKey dictNormalFinal, pr
-'    Next i
-'
-'    ' Write outputs
-'    WriteDictionaryToSheet dictNormalFinal, outputSheets("Normal")
-'    WriteDictionaryToSheet dictWeekGT38, outputSheets("OT_Rule3")
-'
-'    LogError "Write", "", 0, "Rule3Only", "Rows written", _
-'        "Normal=" & outputSheets("Normal").UsedRange.Rows.Count - 1 & _
-'        ", WeekGT38=" & outputSheets("OT_Rule3").UsedRange.Rows.Count - 1
-'End Sub
-'
-'Public Sub ProcessRule4Only()
-'    If Not IsInitialized Then
-'        MsgBox "Processor not properly initialized.", vbCritical
-'        Exit Sub
-'    End If
-'
-'    PrepareAllOutputSheets
-'
-'    ' ------------------------
-'    ' Declarations (once only)
-'    ' ------------------------
-'    Dim dayMap As Object
-'    Dim r4Days As Object
-'    Dim weekMap As Object
-'    Dim k As Variant
-'    Dim wk As Variant
-'    Dim shifts As Collection
-'    Dim emp As String
-'    Dim wkKey As String
-'    Dim dsk As Long
-'    Dim dayStr As String
-'    Dim daysDict As Object
-'    Dim arr() As String
-'    Dim c As Long
-'    Dim ds As Variant
-'    Dim i As Long, j As Long
-'    Dim tmp As String
-'    Dim dictNormal As Object
-'    Dim dictR4 As Object
-'    Dim idx As Long
-'    Dim take As Double
-'    Dim isR4 As Boolean
-'    Dim dk As String
-'    Dim inner As Object
-'
-'    ' 1) Gather shifts into employee-day buckets
-'    GatherDailyBuckets dayMap
-'
-'    ' 2) Build (emp, weekSortKey) -> set of worked day keys (yyyymmdd)
-'    Set r4Days = CreateObject("Scripting.Dictionary")
-'    Set weekMap = CreateObject("Scripting.Dictionary")
-'
-'    For Each k In dayMap.Keys
-'        Set shifts = dayMap(k)
-'        If shifts.Count > 0 Then
-'            emp = CStr(shifts(1).EmployeeCode)
-'            wkKey = weekKey2(emp, CLng(shifts(1).weekSortKey))
-'            dsk = CLng(shifts(1).dateSortKey)
-'            dayStr = CStr(dsk)
-'
-'            If Not weekMap.Exists(wkKey) Then
-'                Set inner = CreateObject("Scripting.Dictionary")
-'                weekMap.Add wkKey, inner
-'            End If
-'            weekMap(wkKey)(dayStr) = True
-'        End If
-'    Next k
-'
-'    ' 3) For each (emp, weekSortKey), sort days asc and mark 6th & 7th as Rule 4 days
-'    For Each wk In weekMap.Keys
-'        Set daysDict = weekMap(wk)
-'
-'        ReDim arr(1 To daysDict.Count)
-'        c = 0
-'        For Each ds In daysDict.Keys
-'            c = c + 1
-'            arr(c) = CStr(ds)
-'        Next ds
-'
-'        ' Sort ascending numerically by yyyymmdd
-'        For i = 1 To UBound(arr) - 1
-'            For j = i + 1 To UBound(arr)
-'                If CLng(arr(i)) > CLng(arr(j)) Then
-'                    tmp = arr(i): arr(i) = arr(j): arr(j) = tmp
-'                End If
-'            Next j
-'        Next i
-'
-'        ' Mark 6th and 7th worked days
-'        For i = 6 To UBound(arr)
-'            emp = Split(CStr(wk), "|")(0)      ' wkKey uses vbLf join: emp & vbLf & weekSortKey
-'            dsk = CLng(arr(i))
-'            dk = dayKey(emp, dsk)               ' builds emp & vbLf & yyyymmdd
-'            r4Days(dk) = True
-'        Next i
-'    Next wk
-'
-'    ' 4) Allocate: for marked days => code 610; others => Normal
-'    Set dictNormal = CreateObject("Scripting.Dictionary")
-'    Set dictR4 = CreateObject("Scripting.Dictionary")
-'
-'    For Each k In dayMap.Keys
-'        Set shifts = dayMap(k)
-'        isR4 = r4Days.Exists(CStr(k))
-'        For idx = 1 To shifts.Count
-'            take = shifts(idx).normalAvail
-'            If take > 0 Then
-'                If isR4 Then
-'                    ' All hours on the 6th/7th worked day go to code 610
-'                    StoreR4Piece dictR4, shifts(idx).data, take, "610"
-'                Else
-'                    ' Otherwise the whole shift is Normal
-'                    StoreNormalPiece dictNormal, shifts(idx).data, take
-'                End If
-'                shifts(idx).normalAvail = 0
-'            End If
-'        Next idx
-'    Next k
-'
-'    ' 5) Write outputs
-'    WriteDictionaryToSheet dictNormal, outputSheets("Normal")
-'    If outputSheets.Exists("OT_Rule4") Then
-'        WriteDictionaryToSheet dictR4, outputSheets("OT_Rule4")
-'    Else
-'        LogError "Write", "", 0, "ProcessRule4Only", "Missing output sheet key 'OT_Rule4'", _
-'                 "Call RegisterOutputSheet ""OT_Rule4"", Worksheets(""OTRule4"")"
-'    End If
-'
-'    ' Summary
-'    LogError "Write", "", 0, "Rule4Only", "Rows written", _
-'        "Normal=" & outputSheets("Normal").UsedRange.Rows.Count - 1 & _
-'        ", R4=" & IIf(outputSheets.Exists("OT_Rule4"), outputSheets("OT_Rule4").UsedRange.Rows.Count - 1, 0)
-'End Sub
 
 ' Helper used by Rule 4: store Rule 4 units with supplied code (610)
 Private Sub StoreR4Piece(ByRef dict As Object, ByRef d As PayrollRowDataClass, units As Double, payrollCode As String)
@@ -1893,28 +1622,30 @@ Private Sub ProcessExportDeduped(ByVal dayMap As Object)
     Dim shifts As Collection, col As Collection
     Dim i As Long, j As Long
 
-    ' --- (PH) Public Holiday -> 603 (site-aware; consumes minutes first)
+    '===========================================================================
+    ' PHASE 1: Public Holidays (603) - HIGHEST PRIORITY
+    '===========================================================================
     For Each k In dayMap.keys
         Set shifts = dayMap(k)
         If Not shifts Is Nothing Then
             For i = 1 To shifts.Count
                 If IsPublicHolidayShift(shifts(i)) Then
                     If shifts(i).normalAvail > 0 Then
-                        ' Diagnostics
                         Debug.Print "PH-CONSUME", shifts(i).EmployeeCode, _
                                     "Date:", Format(shifts(i).data.DateIn, "dd/mm/yyyy"), _
                                     "Units:", CLng(shifts(i).normalAvail), _
                                     "Site:", shifts(i).payrollExportCode
                         StoreWithCode outOT, outNormal, shifts(i).data, shifts(i).normalAvail, "603"
-                        shifts(i).normalAvail = 0
+                        shifts(i).normalAvail = 0  ' Consume immediately
                     End If
                 End If
             Next i
         End If
     Next k
 
-    
-    ' Build weekMap: Collection of ShiftPieces
+    '===========================================================================
+    ' PHASE 2: Build Week Map (for Rule 4 and Weekly OT)
+    '===========================================================================
     Dim weekMap As Object: Set weekMap = CreateObject("Scripting.Dictionary")
     Dim emp As String, wkKey As String
     For Each dayKey In dayMap.keys
@@ -1932,22 +1663,21 @@ Private Sub ProcessExportDeduped(ByVal dayMap As Object)
         End If
     Next dayKey
 
-    ' For each employee/week, sort days ASC and consume ONLY the 6th/7th days WITH remaining minutes
-    '(R4) 6th/7th worked day -> 610 (per employee/week), counting ONLY days with remaining minutes
+    '===========================================================================
+    ' PHASE 3: Rule 4 - 6th and 7th Worked Days (610)
+    '===========================================================================
     Dim daysDict As Object
-    Dim arr() As Variant ' dynamic 2D: arr(1..3, 1..c) = [yyyymmdd; dayKey; remainingDayUnits]
+    Dim arr() As Variant
     Dim c As Long, ds As Variant, a As Long, b As Long, idx As Long
     Dim dWork As Date, remainingDayUnits As Long
     Dim t1 As Variant, t2 As Variant, t3 As Variant
     
     For Each wk In weekMap.keys
         Set daysDict = weekMap(wk)
-
-        ' Build arr dynamically on the LAST dimension (legal for ReDim Preserve)
         c = 0
-        Erase arr ' ensure arr is unallocated before reuse
+        Erase arr
 
-        
+        ' Build array of worked days with remaining units
         For Each ds In daysDict.keys
             Set col = daysDict(ds)
             remainingDayUnits = 0
@@ -1965,167 +1695,215 @@ Private Sub ProcessExportDeduped(ByVal dayMap As Object)
                     ReDim Preserve arr(1 To 3, 1 To c)
                 End If
                 dWork = CDate(col(1).data.DateIn)
-                arr(1, c) = CLng(Format(dWork, "yyyymmdd")) ' date sort key
-                arr(2, c) = ds                              ' original dayKey
-                arr(3, c) = remainingDayUnits               ' remaining units for that day
+                arr(1, c) = CLng(Format(dWork, "yyyymmdd"))
+                arr(2, c) = ds
+                arr(3, c) = remainingDayUnits
             End If
         Next ds
 
-        ' Nothing to sort/consume if <= 1 remaining day
-        If c <= 1 Then GoTo NextWeekR4
+        If c <= 5 Then GoTo NextWeekR4  ' Need at least 6 worked days
 
-        ' Sort ascending by date (field 1), swap all three fields together
+        ' Sort by date ascending
         For a = 1 To c - 1
             For b = a + 1 To c
                 If CLng(arr(1, a)) > CLng(arr(1, b)) Then
                     t1 = arr(1, a): t2 = arr(2, a): t3 = arr(3, a)
                     arr(1, a) = arr(1, b): arr(2, a) = arr(2, b): arr(3, a) = arr(3, b)
-                    arr(1, b) = t1:       arr(2, b) = t2:       arr(3, b) = t3
+                    arr(1, b) = t1: arr(2, b) = t2: arr(3, b) = t3
                 End If
             Next b
         Next a
 
-        ' Consume day #6 and (if exists) #7
-        If c >= 6 Then
-            For idx = 6 To IIf(c >= 7, 7, c)
-                ds = arr(2, idx) ' original dictionary dayKey
-                Set col = daysDict(ds)
-                If Not col Is Nothing Then
-                    For j = 1 To col.Count
-                        If col(j).normalAvail > 0 Then
-                            ' Diagnostics
-                            Debug.Print "R4-CONSUME", col(j).EmployeeCode, _
-                                        "Date:", Format(col(j).data.DateIn, "dd/mm/yyyy"), _
-                                        "Units:", CLng(col(j).normalAvail), _
-                                        "WeekKey:", wk
-                            StoreWithCode outOT, outNormal, col(j).data, col(j).normalAvail, "610"
-                            col(j).normalAvail = 0
-                        End If
-                    Next j
-                End If
-            Next idx
-        End If
+        ' Allocate 6th and 7th worked days to code 610
+        For idx = 6 To IIf(c >= 7, 7, c)
+            ds = arr(2, idx)
+            Set col = daysDict(ds)
+            If Not col Is Nothing Then
+                For j = 1 To col.Count
+                    If col(j).normalAvail > 0 Then
+                        Debug.Print "R4-CONSUME", col(j).EmployeeCode, _
+                                    "Date:", Format(col(j).data.DateIn, "dd/mm/yyyy"), _
+                                    "Units:", CLng(col(j).normalAvail), _
+                                    "WeekKey:", wk
+                        StoreWithCode outOT, outNormal, col(j).data, col(j).normalAvail, "610"
+                        col(j).normalAvail = 0  ' Consume immediately
+                    End If
+                Next j
+            End If
+        Next idx
 
 NextWeekR4:
     Next wk
-    
-    ' ==== Highest-Rated bands on remaining minutes ====
-    Const DAILY_THRESHOLD_UNITS As Long = 115000 ' 11.5 h * 10000
-    Const WEEKLY_THRESHOLD_UNITS As Long = 380000 ' 38 h * 10000
 
-    ' 1) Daily bands per day
-    Dim dailyA2 As Object, dailyF2 As Object
-    Set dailyA2 = CreateObject("Scripting.Dictionary")
-    Set dailyF2 = CreateObject("Scripting.Dictionary")
-
-    Dim excess As Long, needF2 As Long, needA2 As Long
-    Dim takeA2 As Object, takeF2 As Object, kk As Variant
-    Dim dayTotal As Long
+    '===========================================================================
+    ' PHASE 4: Daily OT Bands (Day > 11.5h)
+    '===========================================================================
+    Const DAILY_THRESHOLD_UNITS As Long = 115000  ' 11.5h * 10000
 
     For Each k In dayMap.keys
         Set shifts = dayMap(k)
-        dayTotal = DayMinutes(shifts)
-        If dayTotal <= 0 Then GoTo NextDay
+        
+        ' Calculate remaining day total AFTER PH/R4 consumption
+        Dim dayTotal As Long: dayTotal = 0
+        For i = 1 To shifts.Count
+            dayTotal = dayTotal + CLng(shifts(i).normalAvail)
+        Next i
+        
+        If dayTotal <= DAILY_THRESHOLD_UNITS Then GoTo NextDay
+        
+        ' Calculate excess and split into bands
+        Dim excessDaily As Long
+        excessDaily = dayTotal - DAILY_THRESHOLD_UNITS
+        
+        Dim needF2 As Long, needA2 As Long
+        needF2 = IIf(excessDaily > 20000, 20000, excessDaily)
+        needA2 = IIf(excessDaily > 20000, excessDaily - 20000, 0)
+        
+        ' Get day-of-week for code mapping
+        Dim dow As Integer
+        dow = shifts(1).data.dayOfWeek
+        
+        ' Allocate AFTER 2h band first (highest rate) from latest shift backward
+        Dim need As Long, take As Long, codeA2 As String, codeF2 As String
+        need = needA2
+        codeA2 = MapCodeForBand_DOW(dow, 2)
+        For i = shifts.Count To 1 Step -1
+            If need <= 0 Then Exit For
+            If shifts(i).normalAvail > 0 Then
+                take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
+                If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeA2) Then
+                    shifts(i).normalAvail = shifts(i).normalAvail - take
+                    need = need - take
+                End If
+            End If
+        Next i
+        
+        ' Allocate FIRST 2h band
+        need = needF2
+        codeF2 = MapCodeForBand_DOW(dow, 1)
+        For i = shifts.Count To 1 Step -1
+            If need <= 0 Then Exit For
+            If shifts(i).normalAvail > 0 Then
+                take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
+                If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeF2) Then
+                    shifts(i).normalAvail = shifts(i).normalAvail - take
+                    need = need - take
+                End If
+            End If
+        Next i
 
-        excess = dayTotal - DAILY_THRESHOLD_UNITS
-        If excess < 0 Then excess = 0
-        needF2 = IIf(excess > 20000, 20000, excess)
-        needA2 = IIf(excess > 20000, excess - 20000, 0)
-
-        ' Diagnostics
-        Debug.Print "DailyCheck", shifts(1).EmployeeCode, _
-                    "Date:", Format(shifts(1).data.DateIn, "dd/mm/yyyy"), _
-                    "DayTotal:", dayTotal, _
-                    "Excess:", (dayTotal - DAILY_THRESHOLD_UNITS), _
-                    "F2:", needF2, "A2:", needA2
-
-        Set takeA2 = AllocateFromLatestInDay(shifts, needA2) ' compute only (no subtraction)
-        Set takeF2 = AllocateFromLatestInDay(shifts, needF2)
-
-        For Each kk In takeA2.keys
-            dailyA2(kk) = CLng(dailyA2.item(kk)) + CLng(takeA2(kk))
-        Next kk
-        For Each kk In takeF2.keys
-            dailyF2(kk) = CLng(dailyF2.item(kk)) + CLng(takeF2(kk))
-        Next kk
 NextDay:
     Next k
 
-    ' 2) Weekly bands per employee/week (on remaining minutes)
-    Dim weeklyA2 As Object, weeklyF2 As Object
-    Set weeklyA2 = CreateObject("Scripting.Dictionary")
-    Set weeklyF2 = CreateObject("Scripting.Dictionary")
-
-    Dim wkTotal As Long, wExcess As Long, wNeedF2 As Long, wNeedA2 As Long
-    Dim takeA2W As Object, takeF2W As Object, kk2 As Variant
+    '===========================================================================
+    ' PHASE 5: Weekly OT Bands (Week > 38h)
+    '===========================================================================
+    Const WEEKLY_THRESHOLD_UNITS As Long = 380000  ' 38h * 10000
 
     For Each wk In weekMap.keys
         Set daysDict = weekMap(wk)
-        wkTotal = 0
-        For Each dayKey In daysDict.keys
-            wkTotal = wkTotal + DayMinutes(daysDict(dayKey))
-        Next dayKey
-
-        wExcess = wkTotal - WEEKLY_THRESHOLD_UNITS
-        If wExcess < 0 Then wExcess = 0
-        wNeedF2 = IIf(wExcess > 20000, 20000, wExcess)
-        wNeedA2 = IIf(wExcess > 20000, wExcess - 20000, 0)
-
-        ' Diagnostics
-        Debug.Print "WeeklyCheck", wk, "Total:", wkTotal, "Excess:", wExcess, "F2:", wNeedF2, "A2:", wNeedA2
         
-        Set takeA2W = AllocateFromLatestInWeekBucket(daysDict, wNeedA2) ' compute only
-        Set takeF2W = AllocateFromLatestInWeekBucket(daysDict, wNeedF2)
+        ' Calculate remaining week total AFTER PH/R4/Daily consumption
+        Dim weekTotal As Long: weekTotal = 0
+        For Each dayKey In daysDict.keys
+            Set col = daysDict(dayKey)
+            If Not col Is Nothing Then
+                For j = 1 To col.Count
+                    weekTotal = weekTotal + CLng(col(j).normalAvail)
+                Next j
+            End If
+        Next dayKey
+        
+        If weekTotal <= WEEKLY_THRESHOLD_UNITS Then GoTo NextWeekOT
+        
+        ' Calculate excess and split into bands
+        Dim excessWeekly As Long
+        excessWeekly = weekTotal - WEEKLY_THRESHOLD_UNITS
+        
+        Dim wNeedF2 As Long, wNeedA2 As Long
+        wNeedF2 = IIf(excessWeekly > 20000, 20000, excessWeekly)
+        wNeedA2 = IIf(excessWeekly > 20000, excessWeekly - 20000, 0)
+        
+        ' Build sorted list of all pieces in week (latest first)
+        Dim weekPieces As Collection
+        Set weekPieces = New Collection
+        For Each dayKey In daysDict.keys
+            Set col = daysDict(dayKey)
+            If Not col Is Nothing Then
+                For j = 1 To col.Count
+                    If col(j).normalAvail > 0 Then
+                        weekPieces.Add col(j)
+                    End If
+                Next j
+            End If
+        Next dayKey
+        
+        ' Sort by date descending, then time descending
+        Set weekPieces = SortedPiecesLatestFirst(weekPieces)
+        
+        ' Allocate AFTER 2h band first
+        need = wNeedA2
+        For i = 1 To weekPieces.Count
+            If need <= 0 Then Exit For
+            If weekPieces(i).normalAvail > 0 Then
+                dow = weekPieces(i).data.dayOfWeek
+                codeA2 = MapCodeForBand_DOW(dow, 2)
+                take = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
+                If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeA2) Then
+                    weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
+                    need = need - take
+                End If
+            End If
+        Next i
+        
+        ' Allocate FIRST 2h band
+        need = wNeedF2
+        For i = 1 To weekPieces.Count
+            If need <= 0 Then Exit For
+            If weekPieces(i).normalAvail > 0 Then
+                dow = weekPieces(i).data.dayOfWeek
+                codeF2 = MapCodeForBand_DOW(dow, 1)
+                take = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
+                If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeF2) Then
+                    weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
+                    need = need - take
+                End If
+            End If
+        Next i
 
-        For Each kk2 In takeA2W.keys
-            weeklyA2(kk2) = CLng(weeklyA2.item(kk2)) + CLng(takeA2W(kk2))
-        Next kk2
-        For Each kk2 In takeF2W.keys
-            weeklyF2(kk2) = CLng(weeklyF2.item(kk2)) + CLng(takeF2W(kk2))
-        Next kk2
+NextWeekOT:
     Next wk
-    
-    ' 3) Combine & emit � GLOBAL latest-first (this is where subtraction & writing happens)
-    Dim bandWins As Object: Set bandWins = CreateObject("Scripting.Dictionary")
-    Call CombineAndEmit_GlobalLatestFirst( _
-        dayMap, weekMap, _
-        dailyF2, dailyA2, weeklyF2, weeklyA2, _
-        outOT, outNormal, _
-        bandWins)
 
-    DumpDictionary dayMap, "dayMap", 50
-    DumpDictionary weekMap, "weekMap", 50
-    DumpDictionary dailyF2, "dailyF2", 50
-    DumpDictionary dailyA2, "dailyA2", 50
-    DumpDictionary weeklyF2, "weeklyF2", 50
-    DumpDictionary weeklyA2, "weeklyA2", 50
-
-    ' Remaining safety (should be none), spill any leftovers as base
+    '===========================================================================
+    ' PHASE 6: Base Time (All Remaining Hours)
+    '===========================================================================
     For Each k In dayMap.keys
         Set shifts = dayMap(k)
         If Not shifts Is Nothing Then
             For i = 1 To shifts.Count
                 If shifts(i).normalAvail > 0 Then
-                    StoreWithCode outOT, outNormal, shifts(i).data, shifts(i).normalAvail, MapCodeForBand(CDate(shifts(i).data.DateIn), 0)
+                    dow = shifts(i).data.dayOfWeek
+                    Dim baseCode As String
+                    baseCode = MapCodeForBand_DOW(dow, 0)
+                    StoreWithCode outOT, outNormal, shifts(i).data, shifts(i).normalAvail, baseCode
                     shifts(i).normalAvail = 0
                 End If
             Next i
         End If
     Next k
 
-    ' --- Write results
+    '===========================================================================
+    ' Write Results
+    '===========================================================================
     WriteDictionaryToSheet outNormal, outputSheets("Normal")
     WriteDictionaryToSheet outOT, outputSheets("OT_Deduped")
-
-    ' --- Write Band Wins Audit
-    Call WriteBandWinsAudit(bandWins)
 End Sub
 ' ========= Helpers: Highest-Rated export (per-minute winner) =========
 
 
 Private Function MapCodeForBand(ByVal dt As Date, ByVal band As Integer) As String
 ' band: 0=base, 1=first2, 2=after2
-' Mon�Fri: 600/605/606, Sat: 601/607/608, Sun: 602/602/602
+' Mon Fri: 600/605/606, Sat: 601/607/608, Sun: 602/602/602
 
     Dim dow As Integer
     dow = Weekday(dt, vbMonday) ' Mon=1..Sun=7
@@ -2152,42 +1930,7 @@ Private Function MapCodeForBand(ByVal dt As Date, ByVal band As Integer) As Stri
     End Select
 End Function
 
-Private Function StoreWithCode( _
-    ByRef outOT As Object, ByRef outNormal As Object, _
-    ByRef d As PayrollRowDataClass, ByVal units As Double, ByVal code As String) _
-    As Boolean
 
-    StoreWithCode = False
-    If units <= 0# Then Exit Function
-
-    Dim part As PayrollRowDataClass, why As String
-    Set part = New PayrollRowDataClass
-
-    ' Copy base row + override hours/code
-    CopyPayrollRowData d, part
-    part.hours = units
-    part.payrollCode = code
-
-    ' Decide destination (Normal vs OT) from code family
-    Dim isBase As Boolean
-    isBase = IsBaseCode(code)
-
-    ' Validate row (same rules used by Normal/R1)
-    If Not ValidateForNormalOrR1(part, why) Then
-        ' Mark the shift for allowance suppression and log with Hours
-        MarkErrorShift part, units, why
-        Exit Function
-    End If
-
-    ' Persist
-    If isBase Then
-        StoreByKey outNormal, part
-    Else
-        StoreByKey outOT, part
-    End If
-
-    StoreWithCode = True
-End Function
 
 ' Sum remaining minutes (normalAvail) for a day collection
 Private Function DayMinutes(ByVal shifts As Collection) As Long
@@ -2215,37 +1958,6 @@ Private Sub SortDatesCollection(ByRef c As Collection)
     Set c = tmp
 End Sub
 
-
-' ===== REPLACEMENT: AllocateFromLatestInDay =====
-' Allocate tail minutes across a day's shifts (latest minutes first).
-' Returns minutesByPtr(ObjPtr(sp)) = minutes taken.
-' NOTE: This version DOES NOT subtract from sp.normalAvail.
-Private Function AllocateFromLatestInDay(ByVal shifts As Collection, ByVal need As Long) As Object
-    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    If need <= 0 Or shifts Is Nothing Then
-        Set AllocateFromLatestInDay = dict
-        Exit Function
-    End If
-
-    Dim i As Long, sp As ShiftPieceClass, take As Long, key As String, avail As Long
-    For i = shifts.Count To 1 Step -1
-        If need <= 0 Then Exit For
-        Set sp = shifts(i)
-        avail = CLng(sp.normalAvail)          ' <-- read-only; do NOT subtract here
-        If avail <= 0 Then GoTo NextI
-
-        take = CLng(Application.WorksheetFunction.Min(avail, need))
-        If take > 0 Then
-            key = CStr(ObjPtr(sp))
-            If Not dict.Exists(key) Then dict.Add key, 0&
-            dict(key) = dict(key) + take
-            need = need - take                 ' <-- only reduce the local need
-        End If
-NextI:
-    Next i
-
-    Set AllocateFromLatestInDay = dict
-End Function
 ' Allocate tail minutes across the whole week (dates descending, then latest within day)
 ' Returns minutesByPtr(ObjPtr(sp)) = minutes taken
 Private Function AllocateFromLatestInWeek(ByVal dayMap As Object, ByVal need As Long) As Object
@@ -2363,7 +2075,6 @@ Private Function GetOrCreateSheet(ByVal name As String) As Worksheet
 End Function
 ' ========= End helpers =========
 
-' ===== Helpers for global combiner =====
 Private Function SumSelected(ByVal dict As Object, ByVal allowed As Object) As Long
     Dim k As Variant, s As Long
     s = 0
@@ -2374,6 +2085,7 @@ Private Function SumSelected(ByVal dict As Object, ByVal allowed As Object) As L
     End If
     SumSelected = s
 End Function
+
 ' Safe sorter: returns a new Collection (no in-place assignment)
 Private Function SortedPiecesLatestFirst(ByVal pcs As Collection) As Collection
     Dim i As Long, j As Long
@@ -2409,149 +2121,6 @@ Private Function SortedPiecesLatestFirst(ByVal pcs As Collection) As Collection
     Next i
     Set SortedPiecesLatestFirst = outC
 End Function
-
-Private Sub CombineAndEmit_GlobalLatestFirst( _
-    ByRef dayMap As Object, _
-    ByRef weekMap As Object, _
-    ByRef dailyF2 As Object, ByRef dailyA2 As Object, _
-    ByRef weeklyF2 As Object, ByRef weeklyA2 As Object, _
-    ByRef outOT As Object, ByRef outNormal As Object, _
-    ByRef bandWins As Object)
-
-    Dim wk As Variant, daysDict As Object
-    Dim dayKey As Variant, col As Collection
-    Dim pieces As Collection
-    Dim i As Long
-
-    Dim f2Taken As Object, a2Taken As Object, baseTaken As Object
-    Dim ptr As String
-    Dim workDate As Date
-    Dim wantA2 As Long, wantF2 As Long, take As Long
-    Dim dow As Integer
-    Dim ok As Boolean
-
-    ' helper dict getters already exist in class: DictGetLong
-
-    For Each wk In weekMap.keys
-        Set daysDict = weekMap(wk)
-
-        ' Build flat list of remaining pieces (normalAvail > 0) in this employee/week
-        Set pieces = New Collection
-        For Each dayKey In daysDict.keys
-            Set col = daysDict(dayKey)
-            If Not col Is Nothing Then
-                For i = 1 To col.Count
-                    If col(i).normalAvail > 0 Then pieces.Add col(i)
-                Next i
-            End If
-        Next dayKey
-
-        If pieces.Count = 0 Then GoTo NextWeek
-
-        ' Sort latest-first across week: dateSortKey DESC, then DateTimeOut DESC
-        Set pieces = SortedPiecesLatestFirst(pieces)
-
-        ' Track how much each piece received in each band (for audit)
-        Set f2Taken = CreateObject("Scripting.Dictionary")
-        Set a2Taken = CreateObject("Scripting.Dictionary")
-        Set baseTaken = CreateObject("Scripting.Dictionary")
-
-        ' === Allocate per piece using max(daily, weekly) per band ===
-        For i = 1 To pieces.Count
-            With pieces(i)
-                ptr = CStr(ObjPtr(pieces(i)))
-                workDate = CDate(.data.DateIn)
-                dow = .data.dayOfWeek
-
-                ' How many minutes this piece "wants" in each band = union(daily, weekly) via max
-                wantA2 = Application.WorksheetFunction.Max( _
-                            DictGetLong(dailyA2, ptr), _
-                            DictGetLong(weeklyA2, ptr))
-                wantF2 = Application.WorksheetFunction.Max( _
-                            DictGetLong(dailyF2, ptr), _
-                            DictGetLong(weeklyF2, ptr))
-
-                ' --- Band 2 (AFTER first 2h) first ---
-                If .normalAvail > 0 And wantA2 > 0 Then
-                    take = Application.WorksheetFunction.Min(.normalAvail, wantA2)
-                    If take > 0 Then
-                        ok = StoreWithCode(outOT, outNormal, .data, take, MapCodeForBand_DOW(dow, 2))
-                        If ok Then
-                            If Not a2Taken.Exists(ptr) Then a2Taken.Add ptr, 0&
-                            a2Taken(ptr) = a2Taken(ptr) + take
-                            .normalAvail = .normalAvail - take
-                        'Else
-                        '    LogError "Combine", .data.EmployeeCode, .data.DateIn, _
-                        '             "A2StoreFailed", "Suppressed minutes in combiner", _
-                        '             "Units=" & take & "; Code=" & MapCodeForBand_DOW(dow, 2)
-                        End If
-                    End If
-                End If
-
-                ' --- Band 1 (FIRST 2h) ---
-                If .normalAvail > 0 And wantF2 > 0 Then
-                    take = Application.WorksheetFunction.Min(.normalAvail, wantF2)
-                    If take > 0 Then
-                        ok = StoreWithCode(outOT, outNormal, .data, take, MapCodeForBand_DOW(dow, 1))
-                        If ok Then
-                            If Not f2Taken.Exists(ptr) Then f2Taken.Add ptr, 0&
-                            f2Taken(ptr) = f2Taken(ptr) + take
-                            .normalAvail = .normalAvail - take
-                        'Else
-                        '    LogError "Combine", .data.EmployeeCode, .data.DateIn, _
-                        '             "F2StoreFailed", "Suppressed minutes in combiner", _
-                        '             "Units=" & take & "; Code=" & MapCodeForBand_DOW(dow, 1)
-                        End If
-                    End If
-                End If
-
-                ' --- Base (whatever remains) ---
-                If .normalAvail > 0 Then
-                    take = .normalAvail
-                    ok = StoreWithCode(outOT, outNormal, .data, take, MapCodeForBand_DOW(dow, 0))
-                    If ok Then
-                        If Not baseTaken.Exists(ptr) Then baseTaken.Add ptr, 0&
-                        baseTaken(ptr) = baseTaken(ptr) + take
-                        .normalAvail = 0
-                    'Else
-                    '    LogError "Combine", .data.EmployeeCode, .data.DateIn, _
-                    '             "BaseStoreFailed", "Suppressed minutes in combiner", _
-                    '             "Units=" & take & "; Code=" & MapCodeForBand_DOW(dow, 0)
-                    End If
-                End If
-            End With
-        Next i
-
-        ' === Per-piece audit summary ===
-        Dim rec(1 To 12) As Variant
-        Dim sp As ShiftPieceClass
-
-        For i = 1 To pieces.Count
-            Set sp = pieces(i)
-            workDate = CDate(sp.data.DateIn)
-            dow = sp.data.dayOfWeek
-            ptr = CStr(ObjPtr(sp))
-
-            rec(1) = sp.data.EmployeeCode
-            rec(2) = workDate
-            rec(3) = sp.payrollExportCode
-            rec(4) = sp.data.PayClassCode
-            rec(5) = sp.data.companyCode    ' header says "CompanyCode/CostCentre" - you can join if you wish
-            rec(6) = CLng(IIf(baseTaken.Exists(ptr), baseTaken(ptr), 0&))  ' BaseUnits
-            rec(7) = CLng(IIf(f2Taken.Exists(ptr), f2Taken(ptr), 0&))      ' First2Units
-            rec(8) = CLng(IIf(a2Taken.Exists(ptr), a2Taken(ptr), 0&))      ' After2Units
-            rec(9) = MapCodeForBand_DOW(dow, 0)   ' BaseCode
-            rec(10) = MapCodeForBand_DOW(dow, 1)  ' First2Code
-            rec(11) = MapCodeForBand_DOW(dow, 2)  ' After2Code
-            rec(12) = sp.data.weekSortKey
-
-            bandWins(ptr) = rec
-        Next i
-
-NextWeek:
-    Next wk
-End Sub
-
 ' ---- Small helper: get 0 if key missing ----
 Private Function DictGetLong(ByVal dict As Object, ByVal key As String) As Long
     If dict Is Nothing Then Exit Function
@@ -2561,6 +2130,103 @@ Private Function DictGetLong(ByVal dict As Object, ByVal key As String) As Long
         DictGetLong = 0&
     End If
 End Function
+Private Function StoreWithCode( _
+    ByRef outOT As Object, ByRef outNormal As Object, _
+    ByRef d As PayrollRowDataClass, ByVal units As Double, ByVal code As String) _
+    As Boolean
+
+    StoreWithCode = False
+    If units <= 0# Then Exit Function
+
+    Dim part As PayrollRowDataClass, why As String
+    Set part = New PayrollRowDataClass
+
+    ' Copy base row + override hours/code
+    CopyPayrollRowData d, part
+    part.hours = units
+    part.payrollCode = code
+
+    ' Decide destination (Normal vs OT) from code family
+    Dim isBase As Boolean
+    isBase = IsBaseCode(code)
+
+    ' Validate row (same rules used by Normal/R1)
+    If Not ValidateForNormalOrR1(part, why) Then
+        ' Mark the shift for allowance suppression and log with Hours
+        MarkErrorShift part, units, why
+        Exit Function
+    End If
+
+    ' Persist
+    If isBase Then
+        StoreByKey outNormal, part
+    Else
+        StoreByKey outOT, part
+    End If
+
+    StoreWithCode = True
+End Function
+' ==== NEW: Day-of-week based mapper to remove date/locale ambiguity ====
+Private Function MapCodeForBand_DOW(ByVal dayOfWeek As Integer, ByVal band As Integer) As String
+    ' band: 0=base, 1=first2, 2=after2
+    Select Case dayOfWeek
+        Case 1 To 5  ' Mon Fri
+            If band = 2 Then
+                MapCodeForBand_DOW = "606"
+            ElseIf band = 1 Then
+                MapCodeForBand_DOW = "605"
+            Else
+                MapCodeForBand_DOW = "600"
+            End If
+        Case 6        ' Saturday
+            If band = 2 Then
+                MapCodeForBand_DOW = "608"
+            ElseIf band = 1 Then
+                MapCodeForBand_DOW = "607"
+            Else
+                MapCodeForBand_DOW = "601"
+            End If
+        Case Else     ' Sunday
+            MapCodeForBand_DOW = "602"   ' base and both OT bands are 602 for Sunday in your scheme
+    End Select
+End Function
+Private Function IsOvertimeCode(code As String) As Boolean
+    Select Case Trim$(code)
+        Case "605", "606", "607", "608", "610", "603": IsOvertimeCode = True
+    End Select
+End Function
+Private Sub CopyPayrollRowData(ByRef src As PayrollRowDataClass, ByRef dest As PayrollRowDataClass)
+    With dest
+        .companyCode = src.companyCode
+        .EmployeeCode = src.EmployeeCode
+
+        ' >>> Ensure week-ending flows into derived rows
+        .weekEnding = src.weekEnding
+
+        ' Keep your original entryDate logic (not used for OTDeduped anymore, but harmless)
+        .entryDate = IIf(IsOvertimeCode(src.payrollCode), src.fromDate, src.entryDate)
+
+        .weekSortKey = IIf(IsOvertimeCode(src.payrollCode), _
+            CLng(Format(ParseYYMMDDDate(src.fromDate) - Weekday(ParseYYMMDDDate(src.fromDate), vbMonday) + 1, "yyyymmdd")), _
+            src.weekSortKey)
+
+        .payrollCode = src.payrollCode
+        .PayClassCode = src.PayClassCode
+        .costCentre = src.costCentre
+        .fromDate = src.fromDate
+        .toDate = src.toDate
+        .dateSortKey = src.dateSortKey
+        .payrollExportCode = src.payrollExportCode
+        .payRate = src.payRate
+        .dayOfWeek = src.dayOfWeek
+        .DateIn = src.DateIn
+        .DateOut = src.DateOut
+        .DateTimeIn = src.DateTimeIn
+        .DateTimeOut = src.DateTimeOut
+        .hours = src.hours
+    End With
+End Sub
+
 Private Sub SortPiecesLatestFirst(ByRef pcs As Collection)
     Dim i As Long, j As Long
     If pcs Is Nothing Or pcs.Count <= 1 Then Exit Sub
@@ -2579,6 +2245,7 @@ Private Sub SortPiecesLatestFirst(ByRef pcs As Collection)
         Loop
     Next i
 End Sub
+
 
 
 
@@ -2621,70 +2288,72 @@ Private Sub WriteBandWinsAudit(ByVal bandWins As Object)
 
     ws.Columns.AutoFit
 End Sub
-' Allocate tail minutes within a single week's days (dates descending, then latest piece first)
-' Returns minutesByPtr(ObjPtr(sp)) = minutes taken
-Private Function AllocateFromLatestInWeekBucket(ByVal daysDict As Object, ByVal need As Long) As Object
-    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    If need <= 0 Or daysDict Is Nothing Then Set AllocateFromLatestInWeekBucket = dict: Exit Function
-
-    ' Build sortable array: arr(:,1)=yyyymmdd as Long, arr(:,2)=dayKey
-    Dim arr() As Variant, c As Long
-    Dim dayKey As Variant, col As Collection, dWork As Date
-    ReDim arr(1 To IIf(daysDict Is Nothing, 0, daysDict.Count), 1 To 2)
-    c = 0
-    For Each dayKey In daysDict.keys
-        Set col = daysDict(dayKey)
-        If Not col Is Nothing And col.Count > 0 Then
-            dWork = CDate(col(1).data.DateIn)
-            c = c + 1
-            arr(c, 1) = CLng(Format(dWork, "yyyymmdd"))
-            arr(c, 2) = dayKey
-        End If
-    Next dayKey
-    If c = 0 Then Set AllocateFromLatestInWeekBucket = dict: Exit Function
-    
-    If c < UBound(arr, 1) Then ReDim Preserve arr(1 To c, 1 To 2)
-
-    ' Sort by date descending
-    Dim i As Long, j As Long, t1 As Variant, t2 As Variant
-    For i = 1 To c - 1
-        For j = i + 1 To c
-            If CLng(arr(j, 1)) > CLng(arr(i, 1)) Then
-                t1 = arr(i, 1): arr(i, 1) = arr(j, 1): arr(j, 1) = t1
-                t2 = arr(i, 2): arr(i, 2) = arr(j, 2): arr(j, 2) = t2
-            End If
-        Next j
-    Next i
-
-    ' Allocate from latest day, latest piece first (reverse iteration)
-    Dim needLeft As Long: needLeft = need
-    Dim sp As ShiftPieceClass, take As Long, key As String, m As Long
-
-    For i = 1 To c
-        If needLeft <= 0 Then Exit For
-        dayKey = arr(i, 2)
-        Set col = daysDict(dayKey)
-        If col Is Nothing Then GoTo NextDay
-
-        For m = col.Count To 1 Step -1
-            If needLeft <= 0 Then Exit For
-            Set sp = col(m)
-            If sp.normalAvail > 0 Then
-                take = CLng(Application.WorksheetFunction.Min(sp.normalAvail, needLeft))
-                If take > 0 Then
-                    key = CStr(ObjPtr(sp))
-                    If Not dict.Exists(key) Then dict.Add key, 0&
-                    dict(key) = dict(key) + take
-                    needLeft = needLeft - take
-                End If
-            End If
-        Next m
-NextDay:
-    Next i
-
-    Set AllocateFromLatestInWeekBucket = dict
-    DumpDictionary AllocateFromLatestInWeekBucket, "AllocateFromLatestInWeekBucket", 50
-End Function
+'Private Function AllocateFromLatestInWeekBucket(ByVal daysDict As Object, ByVal need As Long) As Object
+'    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+'    If need <= 0 Or daysDict Is Nothing Then Set AllocateFromLatestInWeekBucket = dict: Exit Function
+'
+'    ' Build sortable array: arr(:,1)=yyyymmdd as Long, arr(:,2)=dayKey
+'    Dim arr() As Variant, c As Long
+'    Dim dayKey As Variant, col As Collection, dWork As Date
+'    ReDim arr(1 To daysDict.Count, 1 To 2)  ' <-- Simplified: null check already done
+'    c = 0
+'    For Each dayKey In daysDict.keys
+'        Set col = daysDict(dayKey)
+'        If Not col Is Nothing And col.Count > 0 Then
+'            dWork = CDate(col(1).data.DateIn)
+'            c = c + 1
+'            arr(c, 1) = CLng(Format(dWork, "yyyymmdd"))
+'            arr(c, 2) = dayKey
+'        End If
+'    Next dayKey
+'    If c = 0 Then Set AllocateFromLatestInWeekBucket = dict: Exit Function
+'
+'    If c < UBound(arr, 1) Then ReDim Preserve arr(1 To c, 1 To 2)
+'
+'    ' Sort by date descending
+'    Dim i As Long, j As Long, t1 As Variant, t2 As Variant
+'    For i = 1 To c - 1
+'        For j = i + 1 To c
+'            If CLng(arr(j, 1)) > CLng(arr(i, 1)) Then
+'                t1 = arr(i, 1): arr(i, 1) = arr(j, 1): arr(j, 1) = t1
+'                t2 = arr(i, 2): arr(i, 2) = arr(j, 2): arr(j, 2) = t2
+'            End If
+'        Next j
+'    Next i
+'
+'    ' Allocate from latest day, latest piece first (reverse iteration)
+'    Dim needLeft As Long: needLeft = need
+'    Dim sp As ShiftPieceClass, take As Long, key As String, m As Long
+'
+'    For i = 1 To c
+'        If needLeft <= 0 Then Exit For
+'        dayKey = arr(i, 2)
+'        Set col = daysDict(dayKey)
+'        If col Is Nothing Then GoTo NextDay
+'
+'        For m = col.Count To 1 Step -1
+'            If needLeft <= 0 Then Exit For
+'            Set sp = col(m)
+'            If sp.normalAvail > 0 Then
+'                take = CLng(Application.WorksheetFunction.Min(sp.normalAvail, needLeft))
+'                If take > 0 Then
+'                    key = CStr(ObjPtr(sp))
+'                    If Not dict.Exists(key) Then dict.Add key, 0&
+'                    dict(key) = dict(key) + take
+'
+'                    ' CRITICAL FIX: Deduct allocated time from source
+'                    sp.normalAvail = sp.normalAvail - take
+'
+'                    needLeft = needLeft - take
+'                End If
+'            End If
+'        Next m
+'NextDay:
+'    Next i
+'
+'    Set AllocateFromLatestInWeekBucket = dict
+''    DumpDictionary AllocateFromLatestInWeekBucket, "AllocateFromLatestInWeekBucket", 50
+'End Function
 
 
 Private Sub LogOvertimeLeak(rowData As PayrollRowDataClass, ByVal normalUnits As Double)
@@ -2736,11 +2405,7 @@ Private Function IsBaseCode(code As String) As Boolean
     End Select
 End Function
 
-Private Function IsOvertimeCode(code As String) As Boolean
-    Select Case Trim$(code)
-        Case "605", "606", "607", "608", "610", "603": IsOvertimeCode = True
-    End Select
-End Function
+
 
 ' Build a stable key to identify a shift across phases (Emp + WorkDate + Site)
 Private Function BuildErrorShiftKey(ByRef d As PayrollRowDataClass) As String
@@ -2796,7 +2461,7 @@ Public Sub DumpDictionary(ByVal dict As Object, _
     For Each k In dict.keys
         n = n + 1
         If n > maxItems Then
-            Debug.Print "� (" & (dict.Count - maxItems) & " more items not shown)"
+            Debug.Print "  (" & (dict.Count - maxItems) & " more items not shown)"
             Exit For
         End If
 
@@ -2828,7 +2493,7 @@ Public Sub DumpDictionary(ByVal dict As Object, _
 End Sub
 
 Public Sub DumpShiftPiece(ByVal sp As ShiftPieceClass, Optional ByVal prefix As String = "")
-    On Error Resume Next ' Defensive: don�t interrupt dumps on a bad member
+    On Error Resume Next ' Defensive: don t interrupt dumps on a bad member
     Debug.Print prefix & _
         "Emp=" & sp.EmployeeCode & _
         "; Site=" & sp.payrollExportCode & _
@@ -2872,29 +2537,3 @@ Public Sub DumpRowData(ByVal d As PayrollRowDataClass, Optional ByVal prefix As 
         "; Hours(units)=" & CLng(d.hours) & _
         "; CostCentre=" & d.costCentre
 End Sub
-
-' ==== NEW: Day-of-week based mapper to remove date/locale ambiguity ====
-Private Function MapCodeForBand_DOW(ByVal dayOfWeek As Integer, ByVal band As Integer) As String
-    ' band: 0=base, 1=first2, 2=after2
-    Select Case dayOfWeek
-        Case 1 To 5  ' Mon�Fri
-            If band = 2 Then
-                MapCodeForBand_DOW = "606"
-            ElseIf band = 1 Then
-                MapCodeForBand_DOW = "605"
-            Else
-                MapCodeForBand_DOW = "600"
-            End If
-        Case 6        ' Saturday
-            If band = 2 Then
-                MapCodeForBand_DOW = "608"
-            ElseIf band = 1 Then
-                MapCodeForBand_DOW = "607"
-            Else
-                MapCodeForBand_DOW = "601"
-            End If
-        Case Else     ' Sunday
-            MapCodeForBand_DOW = "602"   ' base and both OT bands are 602 for Sunday in your scheme
-    End Select
-End Function
-
