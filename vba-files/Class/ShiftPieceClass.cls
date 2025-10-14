@@ -9,6 +9,7 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' Class module: ShiftPieceClass
 Option Explicit
+
 Public companyCode As String
 Public EmployeeCode As String
 Public entryDate As String
