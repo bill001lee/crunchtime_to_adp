@@ -1615,17 +1615,34 @@ End Sub
 
 Private Sub ProcessExportDeduped(ByVal dayMap As Object)
     Dim outOT As Object, outNormal As Object
-    Set outOT = CreateObject("Scripting.Dictionary")
+    Set outOT     = CreateObject("Scripting.Dictionary")
     Set outNormal = CreateObject("Scripting.Dictionary")
 
     Dim k As Variant, wk As Variant, dayKey As Variant
     Dim shifts As Collection, col As Collection
     Dim i As Long, j As Long
 
-    '===========================================================================
-    ' PHASE 1: Public Holidays (603) - HIGHEST PRIORITY
-    '===========================================================================
-    For Each k In dayMap.keys
+    '-----------------------------------------------------------------------
+    ' STEP 0: Compute ORIGINAL daily totals before any consumption
+    '-----------------------------------------------------------------------
+    Dim dailyOriginal As Object
+    Set dailyOriginal = CreateObject("Scripting.Dictionary")
+    
+    For Each dayKey In dayMap.Keys
+        Set shifts = dayMap(dayKey)
+        If Not shifts Is Nothing Then
+            Dim sumOrig As Long: sumOrig = 0
+            For i = 1 To shifts.Count
+                sumOrig = sumOrig + CLng(shifts(i).normalAvail)
+            Next i
+            dailyOriginal(dayKey) = sumOrig
+        End If
+    Next dayKey
+
+    '-----------------------------------------------------------------------
+    ' STEP 1: Public Holidays (603) – HIGHEST PRIORITY
+    '-----------------------------------------------------------------------
+    For Each k In dayMap.Keys
         Set shifts = dayMap(k)
         If Not shifts Is Nothing Then
             For i = 1 To shifts.Count
@@ -1636,255 +1653,243 @@ Private Sub ProcessExportDeduped(ByVal dayMap As Object)
                                     "Units:", CLng(shifts(i).normalAvail), _
                                     "Site:", shifts(i).payrollExportCode
                         StoreWithCode outOT, outNormal, shifts(i).data, shifts(i).normalAvail, "603"
-                        shifts(i).normalAvail = 0  ' Consume immediately
+                        shifts(i).normalAvail = 0  ' Only affects consumption balance
                     End If
                 End If
             Next i
         End If
     Next k
 
-    '===========================================================================
-    ' PHASE 2: Build Week Map (for Rule 4 and Weekly OT)
-    '===========================================================================
+    '-----------------------------------------------------------------------
+    ' STEP 2: Build Week Map (for Rule 4 and Weekly OT)
+    '-----------------------------------------------------------------------
     Dim weekMap As Object: Set weekMap = CreateObject("Scripting.Dictionary")
     Dim emp As String, wkKey As String
-    For Each dayKey In dayMap.keys
+    
+    For Each dayKey In dayMap.Keys
         Set shifts = dayMap(dayKey)
-        If Not shifts Is Nothing Then
-            If shifts.Count > 0 Then
-                emp = CStr(shifts(1).EmployeeCode)
-                wkKey = weekKey2(emp, CLng(shifts(1).weekSortKey))
-                If Not weekMap.Exists(wkKey) Then weekMap.Add wkKey, CreateObject("Scripting.Dictionary")
-                If Not weekMap(wkKey).Exists(dayKey) Then Set weekMap(wkKey)(dayKey) = New Collection
-                For j = 1 To shifts.Count
-                    weekMap(wkKey)(dayKey).Add shifts(j)
-                Next j
+        If Not shifts Is Nothing And shifts.Count > 0 Then
+            emp   = CStr(shifts(1).EmployeeCode)
+            wkKey = weekKey2(emp, CLng(shifts(1).weekSortKey))
+            
+            If Not weekMap.Exists(wkKey) Then
+                weekMap.Add wkKey, CreateObject("Scripting.Dictionary")
             End If
+            If Not weekMap(wkKey).Exists(dayKey) Then
+                Set weekMap(wkKey)(dayKey) = New Collection
+            End If
+            
+            For j = 1 To shifts.Count
+                weekMap(wkKey)(dayKey).Add shifts(j)
+            Next j
         End If
     Next dayKey
 
-    '===========================================================================
-    ' PHASE 3: Rule 4 - 6th and 7th Worked Days (610)
-    '===========================================================================
+    '-----------------------------------------------------------------------
+    ' STEP 3: Rule 4 – 6th & 7th Worked Days (610)
+    '-----------------------------------------------------------------------
     Dim daysDict As Object
     Dim arr() As Variant
     Dim c As Long, ds As Variant, a As Long, b As Long, idx As Long
     Dim dWork As Date, remainingDayUnits As Long
     Dim t1 As Variant, t2 As Variant, t3 As Variant
-    
-    For Each wk In weekMap.keys
+
+    For Each wk In weekMap.Keys
         Set daysDict = weekMap(wk)
         c = 0
         Erase arr
-
-        ' Build array of worked days with remaining units
-        For Each ds In daysDict.keys
+        
+        ' Collect days with any remaining normalAvail
+        For Each ds In daysDict.Keys
             Set col = daysDict(ds)
-            remainingDayUnits = 0
             If Not col Is Nothing Then
+                remainingDayUnits = 0
                 For j = 1 To col.Count
                     remainingDayUnits = remainingDayUnits + CLng(col(j).normalAvail)
                 Next j
-            End If
-
-            If remainingDayUnits > 0 Then
-                c = c + 1
-                If c = 1 Then
-                    ReDim arr(1 To 3, 1 To 1)
-                Else
-                    ReDim Preserve arr(1 To 3, 1 To c)
+                If remainingDayUnits > 0 Then
+                    c = c + 1
+                    If c = 1 Then
+                        ReDim arr(1 To 3, 1 To 1)
+                    Else
+                        ReDim Preserve arr(1 To 3, 1 To c)
+                    End If
+                    dWork         = CDate(col(1).data.DateIn)
+                    arr(1, c)     = CLng(Format(dWork, "yyyymmdd"))
+                    arr(2, c)     = ds
+                    arr(3, c)     = remainingDayUnits
                 End If
-                dWork = CDate(col(1).data.DateIn)
-                arr(1, c) = CLng(Format(dWork, "yyyymmdd"))
-                arr(2, c) = ds
-                arr(3, c) = remainingDayUnits
             End If
         Next ds
 
-        If c <= 5 Then GoTo NextWeekR4  ' Need at least 6 worked days
-
-        ' Sort by date ascending
-        For a = 1 To c - 1
-            For b = a + 1 To c
-                If CLng(arr(1, a)) > CLng(arr(1, b)) Then
-                    t1 = arr(1, a): t2 = arr(2, a): t3 = arr(3, a)
-                    arr(1, a) = arr(1, b): arr(2, a) = arr(2, b): arr(3, a) = arr(3, b)
-                    arr(1, b) = t1: arr(2, b) = t2: arr(3, b) = t3
-                End If
-            Next b
-        Next a
-
-        ' Allocate 6th and 7th worked days to code 610
-        For idx = 6 To IIf(c >= 7, 7, c)
-            ds = arr(2, idx)
-            Set col = daysDict(ds)
-            If Not col Is Nothing Then
-                For j = 1 To col.Count
-                    If col(j).normalAvail > 0 Then
-                        Debug.Print "R4-CONSUME", col(j).EmployeeCode, _
-                                    "Date:", Format(col(j).data.DateIn, "dd/mm/yyyy"), _
-                                    "Units:", CLng(col(j).normalAvail), _
-                                    "WeekKey:", wk
-                        StoreWithCode outOT, outNormal, col(j).data, col(j).normalAvail, "610"
-                        col(j).normalAvail = 0  ' Consume immediately
+        If c > 5 Then
+            ' Sort ascending by date
+            For a = 1 To c - 1
+                For b = a + 1 To c
+                    If arr(1, a) > arr(1, b) Then
+                        t1 = arr(1, a): t2 = arr(2, a): t3 = arr(3, a)
+                        arr(1, a) = arr(1, b): arr(2, a) = arr(2, b): arr(3, a) = arr(3, b)
+                        arr(1, b) = t1: arr(2, b) = t2: arr(3, b) = t3
                     End If
-                Next j
-            End If
-        Next idx
+                Next b
+            Next a
 
-NextWeekR4:
+            ' 6th & 7th days → code 610
+            For idx = 6 To IIf(c >= 7, 7, c)
+                ds = arr(2, idx)
+                Set col = daysDict(ds)
+                If Not col Is Nothing Then
+                    For j = 1 To col.Count
+                        If col(j).normalAvail > 0 Then
+                            Debug.Print "R4-CONSUME", col(j).EmployeeCode, _
+                                        "Date:", Format(col(j).data.DateIn, "dd/mm/yyyy"), _
+                                        "Units:", CLng(col(j).normalAvail), _
+                                        "WeekKey:", wk
+                            StoreWithCode outOT, outNormal, col(j).data, col(j).normalAvail, "610"
+                            col(j).normalAvail = 0
+                        End If
+                    Next j
+                End If
+            Next idx
+        End If
     Next wk
 
-    '===========================================================================
-    ' PHASE 4: Daily OT Bands (Day > 11.5h)
-    '===========================================================================
+    '-----------------------------------------------------------------------
+    ' STEP 4: Daily OT Bands (> 11.5 h) – use ORIGINAL daily totals
+    '-----------------------------------------------------------------------
     Const DAILY_THRESHOLD_UNITS As Long = 115000  ' 11.5h * 10000
-
-    For Each k In dayMap.keys
+    
+    For Each k In dayMap.Keys
         Set shifts = dayMap(k)
+        If shifts Is Nothing Then GoTo NextDay
+       
+        ' Use the unmodified total for threshold
+        Dim origDayTotal As Long
+        origDayTotal = CLng(dailyOriginal(k))
         
-        ' Calculate remaining day total AFTER PH/R4 consumption
-        Dim dayTotal As Long: dayTotal = 0
-        For i = 1 To shifts.Count
-            dayTotal = dayTotal + CLng(shifts(i).normalAvail)
-        Next i
-        
-        If dayTotal <= DAILY_THRESHOLD_UNITS Then GoTo NextDay
-        
-        ' Calculate excess and split into bands
-        Dim excessDaily As Long
-        excessDaily = dayTotal - DAILY_THRESHOLD_UNITS
-        
-        Dim needF2 As Long, needA2 As Long
-        needF2 = IIf(excessDaily > 20000, 20000, excessDaily)
-        needA2 = IIf(excessDaily > 20000, excessDaily - 20000, 0)
-        
-        ' Get day-of-week for code mapping
-        Dim dow As Integer
-        dow = shifts(1).data.dayOfWeek
-        
-        ' Allocate AFTER 2h band first (highest rate) from latest shift backward
-        Dim need As Long, take As Long, codeA2 As String, codeF2 As String
-        need = needA2
-        codeA2 = MapCodeForBand_DOW(dow, 2)
-        For i = shifts.Count To 1 Step -1
-            If need <= 0 Then Exit For
-            If shifts(i).normalAvail > 0 Then
-                take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
-                If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeA2) Then
-                    shifts(i).normalAvail = shifts(i).normalAvail - take
-                    need = need - take
+        If origDayTotal > DAILY_THRESHOLD_UNITS Then
+            Dim excessDaily As Long
+            excessDaily = origDayTotal - DAILY_THRESHOLD_UNITS
+            
+            Dim needF2 As Long, needA2 As Long
+            needF2      = Application.WorksheetFunction.Min(20000, excessDaily)
+            needA2      = excessDaily - needF2
+            
+            Dim dow   As Integer
+            dow         = shifts(1).data.dayOfWeek
+            
+            ' AFTER 2 h band
+            Dim need As Long, take As Long
+            Dim codeA2 As String, codeF2 As String
+            codeA2 = MapCodeForBand_DOW(dow, 2)
+            need   = needA2
+            For i = shifts.Count To 1 Step -1
+                If need <= 0 Then Exit For
+                If shifts(i).normalAvail > 0 Then
+                    take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
+                    If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeA2) Then
+                        shifts(i).normalAvail = shifts(i).normalAvail - take
+                        need = need - take
+                    End If
                 End If
-            End If
-        Next i
-        
-        ' Allocate FIRST 2h band
-        need = needF2
-        codeF2 = MapCodeForBand_DOW(dow, 1)
-        For i = shifts.Count To 1 Step -1
-            If need <= 0 Then Exit For
-            If shifts(i).normalAvail > 0 Then
-                take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
-                If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeF2) Then
-                    shifts(i).normalAvail = shifts(i).normalAvail - take
-                    need = need - take
-                End If
-            End If
-        Next i
+            Next i
 
+            ' FIRST 2 h band
+            codeF2 = MapCodeForBand_DOW(dow, 1)
+            need   = needF2
+            For i = shifts.Count To 1 Step -1
+                If need <= 0 Then Exit For
+                If shifts(i).normalAvail > 0 Then
+                    take = Application.WorksheetFunction.Min(shifts(i).normalAvail, need)
+                    If StoreWithCode(outOT, outNormal, shifts(i).data, take, codeF2) Then
+                        shifts(i).normalAvail = shifts(i).normalAvail - take
+                        need = need - take
+                    End If
+                End If
+            Next i
+        End If
 NextDay:
     Next k
 
-    '===========================================================================
-    ' PHASE 5: Weekly OT Bands (Week > 38h)
-    '===========================================================================
+    '-----------------------------------------------------------------------
+    ' STEP 5: Weekly OT Bands (> 38 h) – compute ORIGINAL week totals
+    '-----------------------------------------------------------------------
     Const WEEKLY_THRESHOLD_UNITS As Long = 380000  ' 38h * 10000
-
-    For Each wk In weekMap.keys
+    
+    For Each wk In weekMap.Keys
         Set daysDict = weekMap(wk)
-        
-        ' Calculate remaining week total AFTER PH/R4/Daily consumption
-        Dim weekTotal As Long: weekTotal = 0
-        For Each dayKey In daysDict.keys
-            Set col = daysDict(dayKey)
-            If Not col Is Nothing Then
-                For j = 1 To col.Count
-                    weekTotal = weekTotal + CLng(col(j).normalAvail)
-                Next j
-            End If
-        Next dayKey
-        
-        If weekTotal <= WEEKLY_THRESHOLD_UNITS Then GoTo NextWeekOT
-        
-        ' Calculate excess and split into bands
-        Dim excessWeekly As Long
-        excessWeekly = weekTotal - WEEKLY_THRESHOLD_UNITS
-        
-        Dim wNeedF2 As Long, wNeedA2 As Long
-        wNeedF2 = IIf(excessWeekly > 20000, 20000, excessWeekly)
-        wNeedA2 = IIf(excessWeekly > 20000, excessWeekly - 20000, 0)
-        
-        ' Build sorted list of all pieces in week (latest first)
-        Dim weekPieces As Collection
-        Set weekPieces = New Collection
-        For Each dayKey In daysDict.keys
-            Set col = daysDict(dayKey)
-            If Not col Is Nothing Then
-                For j = 1 To col.Count
-                    If col(j).normalAvail > 0 Then
-                        weekPieces.Add col(j)
-                    End If
-                Next j
-            End If
-        Next dayKey
-        
-        ' Sort by date descending, then time descending
-        Set weekPieces = SortedPiecesLatestFirst(weekPieces)
-        
-        ' Allocate AFTER 2h band first
-        need = wNeedA2
-        For i = 1 To weekPieces.Count
-            If need <= 0 Then Exit For
-            If weekPieces(i).normalAvail > 0 Then
-                dow = weekPieces(i).data.dayOfWeek
-                codeA2 = MapCodeForBand_DOW(dow, 2)
-                take = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
-                If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeA2) Then
-                    weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
-                    need = need - take
-                End If
-            End If
-        Next i
-        
-        ' Allocate FIRST 2h band
-        need = wNeedF2
-        For i = 1 To weekPieces.Count
-            If need <= 0 Then Exit For
-            If weekPieces(i).normalAvail > 0 Then
-                dow = weekPieces(i).data.dayOfWeek
-                codeF2 = MapCodeForBand_DOW(dow, 1)
-                take = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
-                If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeF2) Then
-                    weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
-                    need = need - take
-                End If
-            End If
-        Next i
 
-NextWeekOT:
+        ' Sum original weekly hours
+        Dim origWeekTotal As Long: origWeekTotal = 0
+        For Each dayKey In daysDict.Keys
+            origWeekTotal = origWeekTotal + CLng(dailyOriginal(dayKey))
+        Next dayKey
+        
+        If origWeekTotal > WEEKLY_THRESHOLD_UNITS Then
+            Dim excessWeekly As Long
+            excessWeekly = origWeekTotal - WEEKLY_THRESHOLD_UNITS
+            
+            Dim wNeedF2 As Long, wNeedA2 As Long
+            wNeedF2 = Application.WorksheetFunction.Min(20000, excessWeekly)
+            wNeedA2 = excessWeekly - wNeedF2
+
+            ' Build sorted collection of remaining-earned pieces
+            Dim weekPieces As Collection
+            Set weekPieces = New Collection
+            For Each dayKey In daysDict.Keys
+                Set col = daysDict(dayKey)
+                If Not col Is Nothing Then
+                    For j = 1 To col.Count
+                        If col(j).normalAvail > 0 Then
+                            weekPieces.Add col(j)
+                        End If
+                    Next j
+                End If
+            Next dayKey
+            Set weekPieces = SortedPiecesLatestFirst(weekPieces)
+
+            ' AFTER 2 h band
+            need = wNeedA2
+            For i = 1 To weekPieces.Count
+                If need <= 0 Then Exit For
+                If weekPieces(i).normalAvail > 0 Then
+                    dow  = weekPieces(i).data.dayOfWeek
+                    take = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
+                    codeA2 = MapCodeForBand_DOW(dow, 2)
+                    If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeA2) Then
+                        weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
+                        need = need - take
+                    End If
+                End If
+            Next i
+
+            ' FIRST 2 h band
+            need = wNeedF2
+            For i = 1 To weekPieces.Count
+                If need <= 0 Then Exit For
+                If weekPieces(i).normalAvail > 0 Then
+                    dow   = weekPieces(i).data.dayOfWeek
+                    take  = Application.WorksheetFunction.Min(weekPieces(i).normalAvail, need)
+                    codeF2 = MapCodeForBand_DOW(dow, 1)
+                    If StoreWithCode(outOT, outNormal, weekPieces(i).data, take, codeF2) Then
+                        weekPieces(i).normalAvail = weekPieces(i).normalAvail - take
+                        need = need - take
+                    End If
+                End If
+            Next i
+        End If
     Next wk
 
-    '===========================================================================
-    ' PHASE 6: Base Time (All Remaining Hours)
-    '===========================================================================
-    For Each k In dayMap.keys
+    '-----------------------------------------------------------------------
+    ' STEP 6: Base Time – all remaining normalAvail
+    '-----------------------------------------------------------------------
+    For Each k In dayMap.Keys
         Set shifts = dayMap(k)
         If Not shifts Is Nothing Then
             For i = 1 To shifts.Count
                 If shifts(i).normalAvail > 0 Then
-                    dow = shifts(i).data.dayOfWeek
                     Dim baseCode As String
-                    baseCode = MapCodeForBand_DOW(dow, 0)
+                    baseCode = MapCodeForBand_DOW(shifts(i).data.dayOfWeek, 0)
                     StoreWithCode outOT, outNormal, shifts(i).data, shifts(i).normalAvail, baseCode
                     shifts(i).normalAvail = 0
                 End If
@@ -1892,11 +1897,11 @@ NextWeekOT:
         End If
     Next k
 
-    '===========================================================================
-    ' Write Results
-    '===========================================================================
+    '-----------------------------------------------------------------------
+    ' STEP 7: Write Results
+    '-----------------------------------------------------------------------
     WriteDictionaryToSheet outNormal, outputSheets("Normal")
-    WriteDictionaryToSheet outOT, outputSheets("OT_Deduped")
+    WriteDictionaryToSheet outOT,     outputSheets("OT_Deduped")
 End Sub
 ' ========= Helpers: Highest-Rated export (per-minute winner) =========
 
